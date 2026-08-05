@@ -32,6 +32,20 @@ npm run build           # obligatorio antes de commitear
 Smoke test de la API (ver ejemplos en el `README.md`): `GET /api/health`, `POST /api/generate`,
 `GET/POST /api/configs`, `GET /api/stats`.
 
+## Dos modos: full-stack vs estático (GitHub Pages)
+
+La misma base de código corre con o sin backend. `src/api.ts` intenta la red y, si falla o si
+`VITE_STATIC_ONLY=true`, cae al store cliente (`src/localStore.ts`, motor de `shared/` + `localStorage`).
+
+- **Full-stack** (Netlify / `npm run dev`): Functions + Postgres + AI Gateway.
+- **Estático** (GitHub Pages): build con `VITE_STATIC_ONLY=true` (omite el plugin de Netlify en
+  `vite.config.ts`) y `VITE_BASE=/<repo>/` (subpath del project site). Deploy vía
+  `.github/workflows/deploy-pages.yml`. Datos por navegador, sin IA.
+- Se usa `HashRouter` (`src/main.tsx`) para que los deep links funcionen en Pages sin rewrites.
+- Reglas: no rompas la firma de datos compartida entre API y `localStore` (tipos en `src/api.ts`).
+  Si agregas un endpoint con estado, añade también su equivalente cliente para no romper el modo estático.
+- Prueba estática local: `VITE_BASE=/CRM-Studio/ VITE_STATIC_ONLY=true npm run build && ... npm run preview`.
+
 ## Reglas de la plataforma Netlify (no romper)
 
 1. **Funciones:** usa siempre la sintaxis moderna `export default async (req, context) => Response` +

@@ -4,6 +4,16 @@ import { api, type Health } from "./api";
 import StudioPage from "./pages/StudioPage";
 import SavedPage from "./pages/SavedPage";
 
+function badgeClass(h: Health): string {
+  if (h.mode === "static") return "badge-guided";
+  return h.aiPowered ? "badge-ai" : "badge-guided";
+}
+
+function badgeLabel(h: Health): string {
+  if (h.mode === "static") return "Modo estático (GitHub Pages)";
+  return h.aiPowered ? "IA avanzada activa" : "Modo asistente guiado";
+}
+
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
 
@@ -30,9 +40,7 @@ export default function App() {
         </nav>
         <div className="status">
           {health ? (
-            <span className={`badge ${health.aiPowered ? "badge-ai" : "badge-guided"}`}>
-              {health.aiPowered ? "IA avanzada activa" : "Modo asistente guiado"}
-            </span>
+            <span className={`badge ${badgeClass(health)}`}>{badgeLabel(health)}</span>
           ) : (
             <span className="badge badge-off">Conectando…</span>
           )}

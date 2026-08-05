@@ -1,4 +1,12 @@
 import type { ConfiguratorAnswers, CrmBlueprint, GenerateResponse } from "../shared/types";
+import {
+  localDelete,
+  localGenerate,
+  localGet,
+  localList,
+  localSave,
+  localStats,
+} from "./localStore";
 
 export type SavedConfig = {
   id: number;
@@ -28,27 +36,72 @@ export type Health = {
   mode: string;
 };
 
+// Set at build time (VITE_STATIC_ONLY=true) for static hosts like GitHub Pages.
+// When true, we skip the network entirely and use the client-side store.
+const STATIC_ONLY = import.meta.env.VITE_STATIC_ONLY === "true";
+
 async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  const contentType = res.headers.get("content-type") ?? "";
+  if (!res.ok || !contentType.includes("application/json")) {
+    throw new Error(`Non-JSON or failed response: ${res.status}`);
+  }
   return res.json() as Promise<T>;
 }
 
+// Try the backend API; if it's unavailable (static hosting, offline, or the
+// request fails), transparently fall back to the client-side implementation.
+async function withFallback<T>(network: () => Promise<T>, local: () => T): Promise<T> {
+  if (STATIC_ONLY) return local();
+  try {
+    return await network();
+  } catch {
+    return local();
+  }
+}
+
 export const api = {
-  health: () => fetch("/api/health").then(json<Health>),
+  health: () =>
+    withFallback<Health>(
+      () => fetch("/api/health").then(json<Health>),
+      () => ({ ok: true, db: false, aiPowered: false, mode: "static" }),
+    ),
   generate: (answers: ConfiguratorAnswers) =>
-    fetch("/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answers }),
-    }).then(json<GenerateResponse>),
+    withFallback<GenerateResponse>(
+      () =>
+        fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answers }),
+        }).then(json<GenerateResponse>),
+      () => localGenerate(answers),
+    ),
   saveConfig: (payload: { answers: ConfiguratorAnswers; blueprint: CrmBlueprint; summary: string }) =>
-    fetch("/api/configs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }).then(json<SavedConfig>),
-  listConfigs: () => fetch("/api/configs").then(json<SavedConfig[]>),
-  getConfig: (id: number) => fetch(`/api/configs/${id}`).then(json<SavedConfig>),
-  deleteConfig: (id: number) => fetch(`/api/configs/${id}`, { method: "DELETE" }),
-  stats: () => fetch("/api/stats").then(json<Stats>),
+    withFallback<SavedConfig>(
+      () =>
+        fetch("/api/configs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }).then(json<SavedConfig>),
+      () => localSave(payload),
+    ),
+  listConfigs: () =>
+    withFallback<SavedConfig[]>(() => fetch("/api/configs").then(json<SavedConfig[]>), () => localList()),
+  getConfig: (id: number) =>
+    withFallback<SavedConfig>(
+      () => fetch(`/api/configs/${id}`).then(json<SavedConfig>),
+      () => {
+        const row = localGet(id);
+        if (!row) throw new Error("Not found");
+        return row;
+      },
+    ),
+  deleteConfig: (id: number) =>
+    withFallback<void>(
+      async () => {
+        await fetch(`/api/configs/${id}`, { method: "DELETE" });
+      },
+      () => localDelete(id),
+    ),
+  stats: () => withFallback<Stats>(() => fetch("/api/stats").then(json<Stats>), () => localStats()),
 };

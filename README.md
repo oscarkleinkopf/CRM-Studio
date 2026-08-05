@@ -8,11 +8,20 @@ automatizaciones y el plan recomendado. Cada configuración se puede guardar y c
 
 ## Stack
 
-- **Frontend:** Vite + React 19 + TypeScript (SPA con React Router).
+- **Frontend:** Vite + React 19 + TypeScript (SPA con React Router `HashRouter`).
 - **Backend:** Netlify Functions (sintaxis moderna `export default` + `Config`).
 - **Base de datos:** Netlify Database (Postgres administrado) con Drizzle ORM.
 - **IA (opcional):** Netlify AI Gateway vía el SDK de OpenAI, con degradación elegante.
-- **Deploy:** Netlify.
+- **Deploy:** Netlify (full-stack) **o** GitHub Pages (estático).
+
+## Dos modos de ejecución (una sola base de código)
+
+La app detecta en runtime si hay un backend disponible:
+
+- **Modo full-stack (Netlify / `npm run dev`):** usa las Netlify Functions, la base de datos Postgres y, tras el primer deploy, la IA del AI Gateway.
+- **Modo estático (GitHub Pages):** si no hay API, corre el mismo motor de recomendación en el navegador y guarda las configuraciones en `localStorage`. Se compila con `VITE_STATIC_ONLY=true`, que además omite el plugin de Netlify. El badge superior muestra "Modo estático (GitHub Pages)".
+
+Limitaciones del modo estático: los datos son **por navegador** (no compartidos) y no hay IA (el resumen lo genera el motor determinista).
 
 ## Arquitectura
 
@@ -79,11 +88,30 @@ curl -s -X POST localhost:5173/api/generate -H 'content-type: application/json' 
 > Nunca corras `drizzle-kit migrate`/`push` contra una base hosteada ni ejecutes DDL por
 > `netlify database connect`. Los cambios de esquema van siempre por archivos de migración.
 
-## Deploy en Netlify
+## Deploy en Netlify (full-stack)
 
 `netlify.toml` ya define el build (`npm run build`, publish `dist/`) y el fallback SPA. Con
 `@netlify/database` en las dependencias, Netlify aprovisiona Postgres en el primer deploy. Para activar
 el chatbot con IA, habilita **AI** en el sitio y publica a producción una vez.
+
+## Deploy en GitHub Pages (estático)
+
+El workflow [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) compila el sitio
+estático y lo publica en GitHub Pages en cada push a `main`.
+
+Pasos únicos para habilitarlo:
+
+1. En GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. Haz push a `main` (o corre el workflow manualmente con "Run workflow").
+3. El sitio queda en `https://<owner>.github.io/CRM-Studio/`.
+
+Detalles: el build usa `VITE_BASE=/<repo>/` (para el subpath del project site) y `VITE_STATIC_ONLY=true`.
+Para probar el build estático localmente igual que en Pages:
+
+```bash
+VITE_BASE=/CRM-Studio/ VITE_STATIC_ONLY=true npm run build
+VITE_BASE=/CRM-Studio/ VITE_STATIC_ONLY=true npm run preview   # http://localhost:4173/CRM-Studio/
+```
 
 ## Para otros bots programadores
 
