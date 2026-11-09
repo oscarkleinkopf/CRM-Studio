@@ -1,4 +1,4 @@
-import { buildBlueprint, fallbackSummary, monthlyLeadsToNumber } from "../shared/configurator";
+import { fallbackSummary, monthlyLeadsToNumber, prepareGeneration, prepareSavedConfig } from "../shared/configurator";
 import type { ConfiguratorAnswers, CrmBlueprint, GenerateResponse } from "../shared/types";
 import type { SavedConfig, Stats } from "./api";
 
@@ -22,8 +22,12 @@ function write(rows: SavedConfig[]): void {
 }
 
 export function localGenerate(answers: ConfiguratorAnswers): GenerateResponse {
-  const blueprint = buildBlueprint(answers);
-  return { blueprint, summary: fallbackSummary(answers, blueprint), aiPowered: false };
+  const prepared = prepareGeneration({ answers });
+  return {
+    blueprint: prepared.blueprint,
+    summary: fallbackSummary(prepared.answers, prepared.blueprint),
+    aiPowered: false,
+  };
 }
 
 export function localSave(payload: {
@@ -31,19 +35,20 @@ export function localSave(payload: {
   blueprint: CrmBlueprint;
   summary: string;
 }): SavedConfig {
+  const prepared = prepareSavedConfig(payload);
   const rows = read();
   const nextId = rows.reduce((max, r) => Math.max(max, r.id), 0) + 1;
   const row: SavedConfig = {
     id: nextId,
-    companyName: payload.answers.companyName,
-    industry: payload.answers.industry,
-    teamSize: payload.answers.teamSize,
-    salesMotion: payload.answers.salesMotion,
-    primaryGoal: payload.answers.primaryGoal,
-    monthlyLeads: monthlyLeadsToNumber(payload.answers.monthlyLeads),
-    integrations: payload.answers.integrations,
-    blueprint: payload.blueprint,
-    summary: payload.summary,
+    companyName: prepared.answers.companyName,
+    industry: prepared.answers.industry,
+    teamSize: prepared.answers.teamSize,
+    salesMotion: prepared.answers.salesMotion,
+    primaryGoal: prepared.answers.primaryGoal,
+    monthlyLeads: monthlyLeadsToNumber(prepared.answers.monthlyLeads),
+    integrations: prepared.answers.integrations,
+    blueprint: prepared.blueprint,
+    summary: prepared.summary,
     createdAt: new Date().toISOString(),
   };
   write([row, ...rows]);

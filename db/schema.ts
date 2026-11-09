@@ -12,6 +12,7 @@ export const crmConfigs = pgTable("crm_configs", {
   integrations: jsonb("integrations").$type<string[]>().notNull().default([]),
   blueprint: jsonb("blueprint").$type<CrmBlueprint>().notNull(),
   summary: text("summary").notNull().default(""),
+  ownerTokenHash: varchar("owner_token_hash", { length: 64 }).unique(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
