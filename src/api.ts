@@ -7,6 +7,7 @@ import {
   localSave,
   localStats,
 } from "./localStore";
+import { allOwnerTokens, forgetOwnerToken, getOwnerToken, rememberOwnerToken } from "./ownerTokens";
 
 export type SavedConfig = {
   id: number;
@@ -21,6 +22,8 @@ export type SavedConfig = {
   summary: string;
   createdAt: string;
 };
+
+export type CreatedConfig = SavedConfig & { ownerToken: string };
 
 export type Stats = {
   totalConfigs: number;
@@ -46,6 +49,15 @@ async function json<T>(res: Response): Promise<T> {
     throw new Error(`Non-JSON or failed response: ${res.status}`);
   }
   return res.json() as Promise<T>;
+}
+
+function ownerHeaders(id?: number): HeadersInit {
+  if (id != null) {
+    const token = getOwnerToken(id);
+    return token ? { "X-Owner-Token": token } : {};
+  }
+  const tokens = allOwnerTokens();
+  return tokens.length ? { "X-Owner-Tokens": tokens.join(",") } : {};
 }
 
 // Try the backend API; if it's unavailable (static hosting, offline, or the
@@ -77,19 +89,37 @@ export const api = {
     ),
   saveConfig: (payload: { answers: ConfiguratorAnswers; blueprint: CrmBlueprint; summary: string }) =>
     withFallback<SavedConfig>(
-      () =>
-        fetch("/api/configs", {
+      async () => {
+        const created = await fetch("/api/configs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }).then(json<SavedConfig>),
+          body: JSON.stringify({ answers: payload.answers, summary: payload.summary }),
+        }).then(json<CreatedConfig>);
+        rememberOwnerToken(created.id, created.ownerToken);
+        return {
+          id: created.id,
+          companyName: created.companyName,
+          industry: created.industry,
+          teamSize: created.teamSize,
+          salesMotion: created.salesMotion,
+          primaryGoal: created.primaryGoal,
+          monthlyLeads: created.monthlyLeads,
+          integrations: created.integrations,
+          blueprint: created.blueprint,
+          summary: created.summary,
+          createdAt: created.createdAt,
+        };
+      },
       () => localSave(payload),
     ),
   listConfigs: () =>
-    withFallback<SavedConfig[]>(() => fetch("/api/configs").then(json<SavedConfig[]>), () => localList()),
+    withFallback<SavedConfig[]>(
+      () => fetch("/api/configs", { headers: ownerHeaders() }).then(json<SavedConfig[]>),
+      () => localList(),
+    ),
   getConfig: (id: number) =>
     withFallback<SavedConfig>(
-      () => fetch(`/api/configs/${id}`).then(json<SavedConfig>),
+      () => fetch(`/api/configs/${id}`, { headers: ownerHeaders(id) }).then(json<SavedConfig>),
       () => {
         const row = localGet(id);
         if (!row) throw new Error("Not found");
@@ -99,9 +129,15 @@ export const api = {
   deleteConfig: (id: number) =>
     withFallback<void>(
       async () => {
-        await fetch(`/api/configs/${id}`, { method: "DELETE" });
+        const res = await fetch(`/api/configs/${id}`, { method: "DELETE", headers: ownerHeaders(id) });
+        if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+        forgetOwnerToken(id);
       },
       () => localDelete(id),
     ),
-  stats: () => withFallback<Stats>(() => fetch("/api/stats").then(json<Stats>), () => localStats()),
+  stats: () =>
+    withFallback<Stats>(
+      () => fetch("/api/stats", { headers: ownerHeaders() }).then(json<Stats>),
+      () => localStats(),
+    ),
 };

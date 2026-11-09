@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { STEPS } from "../../shared/configurator";
+import { MAX_COMPANY_NAME_LENGTH } from "../../shared/limits";
 import type { ConfiguratorAnswers, CrmBlueprint } from "../../shared/types";
 import { api } from "../api";
 import BlueprintPreview from "../components/BlueprintPreview";
@@ -163,6 +164,7 @@ export default function StudioPage({ aiPowered }: { aiPowered: boolean }) {
               <input
                 autoFocus
                 value={textInput}
+                maxLength={step.id === "companyName" ? MAX_COMPANY_NAME_LENGTH : undefined}
                 onChange={(e) => setTextInput(e.target.value)}
                 placeholder={step.placeholder ?? "Escribe tu respuesta…"}
               />

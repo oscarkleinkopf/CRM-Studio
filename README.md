@@ -23,6 +23,8 @@ La app detecta en runtime si hay un backend disponible:
 
 Limitaciones del modo estático: los datos son **por navegador** (no compartidos) y no hay IA (el resumen lo genera el motor determinista).
 
+En modo full-stack, cada configuración guardada recibe un **owner token** que el navegador conserva. `GET/DELETE /api/configs` y `GET /api/stats` no listan ni borran el resto de la base: sin ese token (o sin `CRM_STUDIO_ADMIN_TOKEN` en el servidor) la API responde lista vacía o 404. El blueprint se reconstruye siempre en el servidor; el cliente ya no puede inyectarlo.
+
 ## Arquitectura
 
 ```
@@ -30,9 +32,9 @@ index.html ─ src/            → SPA de React (chat + vista previa + configura
 netlify/functions/           → API REST
   ├─ health.ts               → GET  /api/health        estado de DB + IA
   ├─ generate.ts             → POST /api/generate       arma el blueprint (motor + IA opcional)
-  ├─ configs.ts              → GET/POST /api/configs     lista y guarda configuraciones
-  ├─ config-detail.ts        → GET/DELETE /api/configs/:id
-  ├─ stats.ts                → GET  /api/stats           métricas del dashboard
+  ├─ configs.ts              → GET/POST /api/configs     lista las del navegador (owner token) y guarda
+  ├─ config-detail.ts        → GET/DELETE /api/configs/:id  exige owner token (o admin)
+  ├─ stats.ts                → GET  /api/stats           métricas de las configuraciones propias
   └─ _shared/ai.ts           → helper del AI Gateway (con fallback)
 shared/                      → lógica de dominio compartida frontend ⇄ backend
   ├─ types.ts                → tipos (ConfiguratorAnswers, CrmBlueprint, …)
