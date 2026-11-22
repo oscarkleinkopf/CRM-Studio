@@ -34,6 +34,7 @@ export function localSave(payload: {
   answers: ConfiguratorAnswers;
   blueprint: CrmBlueprint;
   summary: string;
+  modules?: string[];
 }): SavedConfig {
   const prepared = prepareSavedConfig(payload);
   const rows = read();

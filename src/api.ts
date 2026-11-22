@@ -7,6 +7,7 @@ import {
   localSave,
   localStats,
 } from "./localStore";
+import { readApiJson, shouldUseLocalFallback } from "./apiResult";
 import { allOwnerTokens, forgetOwnerToken, getOwnerToken, rememberOwnerToken } from "./ownerTokens";
 
 export type SavedConfig = {
@@ -43,14 +44,6 @@ export type Health = {
 // When true, we skip the network entirely and use the client-side store.
 const STATIC_ONLY = import.meta.env.VITE_STATIC_ONLY === "true";
 
-async function json<T>(res: Response): Promise<T> {
-  const contentType = res.headers.get("content-type") ?? "";
-  if (!res.ok || !contentType.includes("application/json")) {
-    throw new Error(`Non-JSON or failed response: ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
-
 function ownerHeaders(id?: number): HeadersInit {
   if (id != null) {
     const token = getOwnerToken(id);
@@ -66,7 +59,8 @@ async function withFallback<T>(network: () => Promise<T>, local: () => T): Promi
   if (STATIC_ONLY) return local();
   try {
     return await network();
-  } catch {
+  } catch (err) {
+    if (!shouldUseLocalFallback(err)) throw err;
     return local();
   }
 }
@@ -74,7 +68,7 @@ async function withFallback<T>(network: () => Promise<T>, local: () => T): Promi
 export const api = {
   health: () =>
     withFallback<Health>(
-      () => fetch("/api/health").then(json<Health>),
+      () => fetch("/api/health").then(readApiJson<Health>),
       () => ({ ok: true, db: false, aiPowered: false, mode: "static" }),
     ),
   generate: (answers: ConfiguratorAnswers) =>
@@ -84,7 +78,7 @@ export const api = {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ answers }),
-        }).then(json<GenerateResponse>),
+        }).then(readApiJson<GenerateResponse>),
       () => localGenerate(answers),
     ),
   saveConfig: (payload: { answers: ConfiguratorAnswers; blueprint: CrmBlueprint; summary: string }) =>
@@ -93,8 +87,12 @@ export const api = {
         const created = await fetch("/api/configs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ answers: payload.answers, summary: payload.summary }),
-        }).then(json<CreatedConfig>);
+          body: JSON.stringify({
+            answers: payload.answers,
+            summary: payload.summary,
+            modules: payload.blueprint.modules,
+          }),
+        }).then(readApiJson<CreatedConfig>);
         rememberOwnerToken(created.id, created.ownerToken);
         return {
           id: created.id,
@@ -110,16 +108,16 @@ export const api = {
           createdAt: created.createdAt,
         };
       },
-      () => localSave(payload),
+      () => localSave({ ...payload, modules: payload.blueprint.modules }),
     ),
   listConfigs: () =>
     withFallback<SavedConfig[]>(
-      () => fetch("/api/configs", { headers: ownerHeaders() }).then(json<SavedConfig[]>),
+      () => fetch("/api/configs", { headers: ownerHeaders() }).then(readApiJson<SavedConfig[]>),
       () => localList(),
     ),
   getConfig: (id: number) =>
     withFallback<SavedConfig>(
-      () => fetch(`/api/configs/${id}`, { headers: ownerHeaders(id) }).then(json<SavedConfig>),
+      () => fetch(`/api/configs/${id}`, { headers: ownerHeaders(id) }).then(readApiJson<SavedConfig>),
       () => {
         const row = localGet(id);
         if (!row) throw new Error("Not found");
@@ -130,14 +128,14 @@ export const api = {
     withFallback<void>(
       async () => {
         const res = await fetch(`/api/configs/${id}`, { method: "DELETE", headers: ownerHeaders(id) });
-        if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+        await readApiJson<void>(res);
         forgetOwnerToken(id);
       },
       () => localDelete(id),
     ),
   stats: () =>
     withFallback<Stats>(
-      () => fetch("/api/stats", { headers: ownerHeaders() }).then(json<Stats>),
+      () => fetch("/api/stats", { headers: ownerHeaders() }).then(readApiJson<Stats>),
       () => localStats(),
     ),
 };
