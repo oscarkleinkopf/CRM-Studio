@@ -161,6 +161,32 @@ const SALES_STAGES: Record<string, string[]> = {
   ],
 };
 
+/** Every module the engine can turn on. Client edits may only use these names. */
+export const MODULE_CATALOG = [
+  "Contactos",
+  "Empresas",
+  "Oportunidades",
+  "Actividades y tareas",
+  "Captura de leads",
+  "Campañas",
+  "Pipeline visual (Kanban)",
+  "Pronóstico de ventas",
+  "Tickets de soporte",
+  "Encuestas de satisfacción (NPS)",
+  "Automatizaciones",
+  "Plantillas de mensajes",
+  "Dashboards y reportes",
+  "Metas del equipo",
+  "Bandeja de WhatsApp",
+  "Email marketing",
+  "Leads de redes sociales",
+  "Agenda y citas",
+  "Cotizaciones y facturas",
+  "Formularios web",
+] as const;
+
+const MODULE_SET = new Set<string>(MODULE_CATALOG);
+
 function planFor(teamSize: string, monthlyLeads: string): string {
   if (teamSize === "Solo yo" && (monthlyLeads === "Menos de 20" || monthlyLeads === "20 a 100")) {
     return "Starter (ideal para emprendedores)";
@@ -248,6 +274,23 @@ export function buildBlueprint(answers: ConfiguratorAnswers): CrmBlueprint {
   };
 }
 
+/**
+ * Keeps a caller's module list only when every kept name belongs to the catalog.
+ * Missing, empty, or fully unknown lists leave the recommendation untouched.
+ */
+export function applyModuleSelection(blueprint: CrmBlueprint, modules: unknown): CrmBlueprint {
+  if (!Array.isArray(modules)) return blueprint;
+  const picked = new Set<string>();
+  for (const item of modules) {
+    if (typeof item === "string" && MODULE_SET.has(item)) picked.add(item);
+  }
+  if (picked.size === 0) return blueprint;
+  return {
+    ...blueprint,
+    modules: MODULE_CATALOG.filter((name) => picked.has(name)),
+  };
+}
+
 export function fallbackSummary(answers: ConfiguratorAnswers, blueprint: CrmBlueprint): string {
   const tools =
     answers.integrations.length > 0 ? answers.integrations.join(", ") : "ninguna integración por ahora";
@@ -323,8 +366,9 @@ export function prepareSavedConfig(body: unknown): {
 } {
   const record = asRecord(body);
   const { answers, blueprint } = prepareGeneration(record);
-  const summary = sanitizeSummary(record.summary) || fallbackSummary(answers, blueprint);
-  return { answers, blueprint, summary };
+  const adjusted = applyModuleSelection(blueprint, record.modules);
+  const summary = sanitizeSummary(record.summary) || fallbackSummary(answers, adjusted);
+  return { answers, blueprint: adjusted, summary };
 }
 
 export function monthlyLeadsToNumber(bucket: string): number {

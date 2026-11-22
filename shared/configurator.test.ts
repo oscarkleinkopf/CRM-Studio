@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { MAX_COMPANY_NAME_LENGTH, MAX_SUMMARY_LENGTH } from "./limits";
-import { buildBlueprint, prepareGeneration, prepareSavedConfig, validateAnswers } from "./configurator";
+import {
+  MODULE_CATALOG,
+  STEPS,
+  applyModuleSelection,
+  buildBlueprint,
+  prepareGeneration,
+  prepareSavedConfig,
+  validateAnswers,
+} from "./configurator";
 import type { CrmBlueprint } from "./types";
 
 const validAnswers = {
@@ -75,5 +83,60 @@ describe("prepareGeneration / prepareSavedConfig", () => {
     const filled = prepareSavedConfig({ answers: validAnswers });
     expect(filled.summary.length).toBeGreaterThan(20);
     expect(filled.blueprint).toEqual(generated.blueprint);
+  });
+
+  it("applies a catalog module selection and drops unknown names", () => {
+    const recommended = buildBlueprint(validAnswers);
+    const withoutWhatsApp = recommended.modules.filter((name) => name !== "Bandeja de WhatsApp");
+    const saved = prepareSavedConfig({
+      answers: validAnswers,
+      blueprint: bogusBlueprint,
+      modules: [...withoutWhatsApp, "Dashboards y reportes", "injected", "Dashboards y reportes"],
+    });
+    expect(saved.blueprint.pipelineStages).toEqual(recommended.pipelineStages);
+    expect(saved.blueprint.modules).not.toContain("injected");
+    expect(saved.blueprint.modules).not.toContain("Bandeja de WhatsApp");
+    expect(saved.blueprint.modules).toContain("Dashboards y reportes");
+    expect(saved.blueprint.recommendedPlan).toBe(recommended.recommendedPlan);
+  });
+
+  it("keeps the recommendation when the module list is empty or missing", () => {
+    const recommended = buildBlueprint(validAnswers);
+    expect(applyModuleSelection(recommended, []).modules).toEqual(recommended.modules);
+    expect(applyModuleSelection(recommended, ["no-existe"]).modules).toEqual(recommended.modules);
+    expect(prepareSavedConfig({ answers: validAnswers, modules: "no" }).blueprint.modules).toEqual(
+      recommended.modules,
+    );
+  });
+});
+
+describe("MODULE_CATALOG", () => {
+  it("covers every module the engine can recommend", () => {
+    const options = (id: string) => STEPS.find((step) => step.id === id)?.options ?? [];
+    const catalog = new Set<string>(MODULE_CATALOG);
+    const unknown = new Set<string>();
+    const integrations = options("integrations");
+    for (const industry of options("industry")) {
+      for (const salesMotion of options("salesMotion")) {
+        for (const primaryGoal of options("primaryGoal")) {
+          for (let mask = 0; mask < 1 << integrations.length; mask += 1) {
+            const chosen = integrations.filter((_, index) => (mask & (1 << index)) !== 0);
+            const blueprint = buildBlueprint({
+              companyName: "X",
+              industry,
+              teamSize: "Solo yo",
+              salesMotion,
+              primaryGoal,
+              monthlyLeads: "Menos de 20",
+              integrations: chosen,
+            });
+            for (const module of blueprint.modules) {
+              if (!catalog.has(module)) unknown.add(module);
+            }
+          }
+        }
+      }
+    }
+    expect([...unknown]).toEqual([]);
   });
 });
