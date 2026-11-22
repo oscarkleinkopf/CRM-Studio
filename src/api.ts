@@ -7,6 +7,8 @@ import {
   localSave,
   localStats,
 } from "./localStore";
+import { readApiJson, shouldUseLocalFallback } from "./apiResult";
+import { allOwnerTokens, forgetOwnerToken, getOwnerToken, rememberOwnerToken } from "./ownerTokens";
 
 export type SavedConfig = {
   id: number;
@@ -21,6 +23,8 @@ export type SavedConfig = {
   summary: string;
   createdAt: string;
 };
+
+export type CreatedConfig = SavedConfig & { ownerToken: string };
 
 export type Stats = {
   totalConfigs: number;
@@ -40,12 +44,13 @@ export type Health = {
 // When true, we skip the network entirely and use the client-side store.
 const STATIC_ONLY = import.meta.env.VITE_STATIC_ONLY === "true";
 
-async function json<T>(res: Response): Promise<T> {
-  const contentType = res.headers.get("content-type") ?? "";
-  if (!res.ok || !contentType.includes("application/json")) {
-    throw new Error(`Non-JSON or failed response: ${res.status}`);
+function ownerHeaders(id?: number): HeadersInit {
+  if (id != null) {
+    const token = getOwnerToken(id);
+    return token ? { "X-Owner-Token": token } : {};
   }
-  return res.json() as Promise<T>;
+  const tokens = allOwnerTokens();
+  return tokens.length ? { "X-Owner-Tokens": tokens.join(",") } : {};
 }
 
 // Try the backend API; if it's unavailable (static hosting, offline, or the
@@ -54,7 +59,8 @@ async function withFallback<T>(network: () => Promise<T>, local: () => T): Promi
   if (STATIC_ONLY) return local();
   try {
     return await network();
-  } catch {
+  } catch (err) {
+    if (!shouldUseLocalFallback(err)) throw err;
     return local();
   }
 }
@@ -62,7 +68,7 @@ async function withFallback<T>(network: () => Promise<T>, local: () => T): Promi
 export const api = {
   health: () =>
     withFallback<Health>(
-      () => fetch("/api/health").then(json<Health>),
+      () => fetch("/api/health").then(readApiJson<Health>),
       () => ({ ok: true, db: false, aiPowered: false, mode: "static" }),
     ),
   generate: (answers: ConfiguratorAnswers) =>
@@ -72,24 +78,46 @@ export const api = {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ answers }),
-        }).then(json<GenerateResponse>),
+        }).then(readApiJson<GenerateResponse>),
       () => localGenerate(answers),
     ),
   saveConfig: (payload: { answers: ConfiguratorAnswers; blueprint: CrmBlueprint; summary: string }) =>
     withFallback<SavedConfig>(
-      () =>
-        fetch("/api/configs", {
+      async () => {
+        const created = await fetch("/api/configs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }).then(json<SavedConfig>),
-      () => localSave(payload),
+          body: JSON.stringify({
+            answers: payload.answers,
+            summary: payload.summary,
+            modules: payload.blueprint.modules,
+          }),
+        }).then(readApiJson<CreatedConfig>);
+        rememberOwnerToken(created.id, created.ownerToken);
+        return {
+          id: created.id,
+          companyName: created.companyName,
+          industry: created.industry,
+          teamSize: created.teamSize,
+          salesMotion: created.salesMotion,
+          primaryGoal: created.primaryGoal,
+          monthlyLeads: created.monthlyLeads,
+          integrations: created.integrations,
+          blueprint: created.blueprint,
+          summary: created.summary,
+          createdAt: created.createdAt,
+        };
+      },
+      () => localSave({ ...payload, modules: payload.blueprint.modules }),
     ),
   listConfigs: () =>
-    withFallback<SavedConfig[]>(() => fetch("/api/configs").then(json<SavedConfig[]>), () => localList()),
+    withFallback<SavedConfig[]>(
+      () => fetch("/api/configs", { headers: ownerHeaders() }).then(readApiJson<SavedConfig[]>),
+      () => localList(),
+    ),
   getConfig: (id: number) =>
     withFallback<SavedConfig>(
-      () => fetch(`/api/configs/${id}`).then(json<SavedConfig>),
+      () => fetch(`/api/configs/${id}`, { headers: ownerHeaders(id) }).then(readApiJson<SavedConfig>),
       () => {
         const row = localGet(id);
         if (!row) throw new Error("Not found");
@@ -99,9 +127,15 @@ export const api = {
   deleteConfig: (id: number) =>
     withFallback<void>(
       async () => {
-        await fetch(`/api/configs/${id}`, { method: "DELETE" });
+        const res = await fetch(`/api/configs/${id}`, { method: "DELETE", headers: ownerHeaders(id) });
+        await readApiJson<void>(res);
+        forgetOwnerToken(id);
       },
       () => localDelete(id),
     ),
-  stats: () => withFallback<Stats>(() => fetch("/api/stats").then(json<Stats>), () => localStats()),
+  stats: () =>
+    withFallback<Stats>(
+      () => fetch("/api/stats", { headers: ownerHeaders() }).then(readApiJson<Stats>),
+      () => localStats(),
+    ),
 };

@@ -1,19 +1,28 @@
 import { useEffect, useState } from "react";
 import { api, type SavedConfig, type Stats } from "../api";
+import { apiErrorMessage } from "../apiResult";
+import { downloadConfig } from "../downloadConfig";
 
 export default function SavedPage() {
   const [configs, setConfigs] = useState<SavedConfig[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [selected, setSelected] = useState<SavedConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
-    const [list, s] = await Promise.all([api.listConfigs(), api.stats()]);
-    setConfigs(list);
-    setStats(s);
-    setSelected((prev) => prev ?? list[0] ?? null);
-    setLoading(false);
+    setError(null);
+    try {
+      const [list, s] = await Promise.all([api.listConfigs(), api.stats()]);
+      setConfigs(list);
+      setStats(s);
+      setSelected((prev) => (prev ? (list.find((row) => row.id === prev.id) ?? list[0] ?? null) : (list[0] ?? null)));
+    } catch (err) {
+      setError(apiErrorMessage(err, "No pude cargar las configuraciones."));
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -21,15 +30,21 @@ export default function SavedPage() {
   }, []);
 
   async function remove(id: number) {
-    await api.deleteConfig(id);
-    setSelected(null);
-    await refresh();
+    setError(null);
+    try {
+      await api.deleteConfig(id);
+      setSelected(null);
+      await refresh();
+    } catch (err) {
+      setError(apiErrorMessage(err, "No pude eliminar la configuración."));
+    }
   }
 
   if (loading) return <div className="loading">Cargando configuraciones…</div>;
 
   return (
     <div className="saved">
+      {error && <div className="banner-error">{error}</div>}
       {stats && (
         <div className="stat-row">
           <StatCard label="Configuraciones creadas" value={stats.totalConfigs} />
@@ -68,9 +83,17 @@ export default function SavedPage() {
                     {selected.industry} · {selected.teamSize} · {selected.salesMotion}
                   </p>
                 </div>
-                <button className="danger" onClick={() => remove(selected.id)}>
-                  Eliminar
-                </button>
+                <div className="detail-actions">
+                  <button type="button" className="ghost" onClick={() => downloadConfig(selected, "json")}>
+                    Descargar JSON
+                  </button>
+                  <button type="button" className="ghost" onClick={() => downloadConfig(selected, "txt")}>
+                    Descargar texto
+                  </button>
+                  <button type="button" className="danger" onClick={() => void remove(selected.id)}>
+                    Eliminar
+                  </button>
+                </div>
               </div>
 
               <p className="detail-summary">{selected.summary}</p>

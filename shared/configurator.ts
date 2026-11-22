@@ -1,3 +1,4 @@
+import { MAX_COMPANY_NAME_LENGTH, MAX_SUMMARY_LENGTH } from "./limits";
 import type { ConfiguratorAnswers, CrmBlueprint, CustomField } from "./types";
 
 export type Step = {
@@ -160,6 +161,32 @@ const SALES_STAGES: Record<string, string[]> = {
   ],
 };
 
+/** Every module the engine can turn on. Client edits may only use these names. */
+export const MODULE_CATALOG = [
+  "Contactos",
+  "Empresas",
+  "Oportunidades",
+  "Actividades y tareas",
+  "Captura de leads",
+  "Campañas",
+  "Pipeline visual (Kanban)",
+  "Pronóstico de ventas",
+  "Tickets de soporte",
+  "Encuestas de satisfacción (NPS)",
+  "Automatizaciones",
+  "Plantillas de mensajes",
+  "Dashboards y reportes",
+  "Metas del equipo",
+  "Bandeja de WhatsApp",
+  "Email marketing",
+  "Leads de redes sociales",
+  "Agenda y citas",
+  "Cotizaciones y facturas",
+  "Formularios web",
+] as const;
+
+const MODULE_SET = new Set<string>(MODULE_CATALOG);
+
 function planFor(teamSize: string, monthlyLeads: string): string {
   if (teamSize === "Solo yo" && (monthlyLeads === "Menos de 20" || monthlyLeads === "20 a 100")) {
     return "Starter (ideal para emprendedores)";
@@ -247,6 +274,23 @@ export function buildBlueprint(answers: ConfiguratorAnswers): CrmBlueprint {
   };
 }
 
+/**
+ * Keeps a caller's module list only when every kept name belongs to the catalog.
+ * Missing, empty, or fully unknown lists leave the recommendation untouched.
+ */
+export function applyModuleSelection(blueprint: CrmBlueprint, modules: unknown): CrmBlueprint {
+  if (!Array.isArray(modules)) return blueprint;
+  const picked = new Set<string>();
+  for (const item of modules) {
+    if (typeof item === "string" && MODULE_SET.has(item)) picked.add(item);
+  }
+  if (picked.size === 0) return blueprint;
+  return {
+    ...blueprint,
+    modules: MODULE_CATALOG.filter((name) => picked.has(name)),
+  };
+}
+
 export function fallbackSummary(answers: ConfiguratorAnswers, blueprint: CrmBlueprint): string {
   const tools =
     answers.integrations.length > 0 ? answers.integrations.join(", ") : "ninguna integración por ahora";
@@ -259,20 +303,72 @@ export function fallbackSummary(answers: ConfiguratorAnswers, blueprint: CrmBlue
   );
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function optionOrDefault(
+  id: keyof ConfiguratorAnswers,
+  value: unknown,
+  fallback: string,
+): string {
+  const step = STEPS.find((s) => s.id === id);
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  if (step?.options?.length) {
+    return step.options.includes(trimmed) ? trimmed : fallback;
+  }
+  return trimmed || fallback;
+}
+
 export function validateAnswers(input: unknown): ConfiguratorAnswers {
-  const a = (input ?? {}) as Record<string, unknown>;
-  const str = (v: unknown, fallback = "") => (typeof v === "string" && v.trim() ? v.trim() : fallback);
+  const a = asRecord(input);
+  const companyRaw = typeof a.companyName === "string" ? a.companyName.trim() : "";
+  const companyName = companyRaw.slice(0, MAX_COMPANY_NAME_LENGTH) || "Mi empresa";
+  const allowedIntegrations = new Set(STEPS.find((s) => s.id === "integrations")?.options ?? []);
+  const integrations = Array.isArray(a.integrations)
+    ? [
+        ...new Set(
+          a.integrations.filter((x): x is string => typeof x === "string" && allowedIntegrations.has(x)),
+        ),
+      ]
+    : [];
   return {
-    companyName: str(a.companyName, "Mi empresa"),
-    industry: str(a.industry, "Otro"),
-    teamSize: str(a.teamSize, "Solo yo"),
-    salesMotion: str(a.salesMotion, "Mixto"),
-    primaryGoal: str(a.primaryGoal, "Ordenar mi pipeline de ventas"),
-    monthlyLeads: str(a.monthlyLeads, "20 a 100"),
-    integrations: Array.isArray(a.integrations)
-      ? a.integrations.filter((x): x is string => typeof x === "string")
-      : [],
+    companyName,
+    industry: optionOrDefault("industry", a.industry, "Otro"),
+    teamSize: optionOrDefault("teamSize", a.teamSize, "Solo yo"),
+    salesMotion: optionOrDefault("salesMotion", a.salesMotion, "Mixto"),
+    primaryGoal: optionOrDefault("primaryGoal", a.primaryGoal, "Ordenar mi pipeline de ventas"),
+    monthlyLeads: optionOrDefault("monthlyLeads", a.monthlyLeads, "20 a 100"),
+    integrations,
   };
+}
+
+export function sanitizeSummary(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, MAX_SUMMARY_LENGTH);
+}
+
+export function prepareGeneration(body: unknown): {
+  answers: ConfiguratorAnswers;
+  blueprint: CrmBlueprint;
+} {
+  const answers = validateAnswers(asRecord(body).answers);
+  return { answers, blueprint: buildBlueprint(answers) };
+}
+
+export function prepareSavedConfig(body: unknown): {
+  answers: ConfiguratorAnswers;
+  blueprint: CrmBlueprint;
+  summary: string;
+} {
+  const record = asRecord(body);
+  const { answers, blueprint } = prepareGeneration(record);
+  const adjusted = applyModuleSelection(blueprint, record.modules);
+  const summary = sanitizeSummary(record.summary) || fallbackSummary(answers, adjusted);
+  return { answers, blueprint: adjusted, summary };
 }
 
 export function monthlyLeadsToNumber(bucket: string): number {
