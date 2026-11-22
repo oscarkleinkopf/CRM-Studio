@@ -66,6 +66,7 @@ export default function StudioPage({ aiPowered }: { aiPowered: boolean }) {
   const [flash, setFlash] = useState<string | null>(null);
 
   const threadRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
   const transcript = useMemo(() => buildTranscript(answers, stepIndex), [answers, stepIndex]);
   const activeStep = revising !== null ? STEPS[revising] : STEPS[stepIndex];
   const showStep = revising !== null || phase === "ask";
@@ -74,6 +75,10 @@ export default function StudioPage({ aiPowered }: { aiPowered: boolean }) {
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" });
   }, [transcript, phase, flash]);
+
+  useEffect(() => {
+    if (revising !== null) composerRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [revising]);
 
   function commit(next: Partial<ConfiguratorAnswers>) {
     const updated = { ...answers, ...next };
@@ -261,7 +266,7 @@ export default function StudioPage({ aiPowered }: { aiPowered: boolean }) {
           {flash && <div className="bubble bot">{flash}</div>}
         </div>
 
-        <div className="composer">
+        <div className="composer" ref={composerRef}>
           {(stepIndex > 0 || revising !== null) && phase !== "generating" && (
             <div className="composer-nav">
               <button type="button" className="ghost" onClick={goBack}>
