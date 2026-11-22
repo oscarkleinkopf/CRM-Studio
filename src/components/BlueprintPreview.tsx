@@ -1,3 +1,4 @@
+import { MODULE_CATALOG } from "../../shared/configurator";
 import type { ConfiguratorAnswers, CrmBlueprint } from "../../shared/types";
 
 type Props = {
@@ -6,23 +7,57 @@ type Props = {
   aiUsed: boolean;
   aiAvailable: boolean;
   generating: boolean;
+  onEditAnswer?: (id: keyof ConfiguratorAnswers) => void;
+  onToggleModule?: (name: string) => void;
 };
 
-export default function BlueprintPreview({ answers, blueprint, aiUsed, aiAvailable, generating }: Props) {
+const FACTS: { id: keyof ConfiguratorAnswers; label: string }[] = [
+  { id: "industry", label: "Rubro" },
+  { id: "teamSize", label: "Equipo" },
+  { id: "salesMotion", label: "Venta" },
+  { id: "primaryGoal", label: "Objetivo" },
+];
+
+export default function BlueprintPreview({
+  answers,
+  blueprint,
+  aiUsed,
+  aiAvailable,
+  generating,
+  onEditAnswer,
+  onToggleModule,
+}: Props) {
+  const enabled = new Set(blueprint?.modules ?? []);
+
   return (
     <div className="preview">
       <div className="preview-header">
-        <h3>{answers.companyName ? answers.companyName : "Tu CRM a medida"}</h3>
+        <div className="preview-header-row">
+          <h3>{answers.companyName ? answers.companyName : "Tu CRM a medida"}</h3>
+          {onEditAnswer && answers.companyName && (
+            <button type="button" className="linkish" onClick={() => onEditAnswer("companyName")}>
+              Cambiar
+            </button>
+          )}
+        </div>
         <p className="preview-sub">
           {blueprint ? "Configuración recomendada" : "La vista previa se completará mientras conversas"}
         </p>
       </div>
 
       <div className="facts">
-        <Fact label="Rubro" value={answers.industry} />
-        <Fact label="Equipo" value={answers.teamSize} />
-        <Fact label="Venta" value={answers.salesMotion} />
-        <Fact label="Objetivo" value={answers.primaryGoal} />
+        {FACTS.map((fact) => {
+          const value = answers[fact.id];
+          const text = typeof value === "string" ? value : "";
+          return (
+            <Fact
+              key={fact.id}
+              label={fact.label}
+              value={text}
+              onEdit={onEditAnswer && text ? () => onEditAnswer(fact.id) : undefined}
+            />
+          );
+        })}
       </div>
 
       {generating && <div className="preview-loading">Diseñando módulos y pipeline…</div>}
@@ -35,21 +70,37 @@ export default function BlueprintPreview({ answers, blueprint, aiUsed, aiAvailab
           </div>
 
           <Group title={`Módulos activados (${blueprint.modules.length})`}>
+            {onToggleModule && (
+              <p className="group-hint">Prende o apaga módulos antes de guardar. Tiene que quedar al menos uno.</p>
+            )}
             <div className="tag-list">
-              {blueprint.modules.map((m) => (
-                <span key={m} className="tag">
-                  {m}
-                </span>
-              ))}
+              {(onToggleModule ? MODULE_CATALOG : blueprint.modules).map((name) =>
+                onToggleModule ? (
+                  <button
+                    key={name}
+                    type="button"
+                    className={`tag module-toggle ${enabled.has(name) ? "on" : "off"}`}
+                    aria-pressed={enabled.has(name)}
+                    onClick={() => onToggleModule(name)}
+                  >
+                    {enabled.has(name) ? "✓ " : ""}
+                    {name}
+                  </button>
+                ) : (
+                  <span key={name} className="tag">
+                    {name}
+                  </span>
+                ),
+              )}
             </div>
           </Group>
 
           <Group title="Pipeline de ventas">
             <div className="pipeline">
-              {blueprint.pipelineStages.map((s, i) => (
-                <span key={s} className="stage">
+              {blueprint.pipelineStages.map((stage, i) => (
+                <span key={stage} className="stage">
                   <span className="stage-num">{i + 1}</span>
-                  {s}
+                  {stage}
                 </span>
               ))}
             </div>
@@ -58,9 +109,9 @@ export default function BlueprintPreview({ answers, blueprint, aiUsed, aiAvailab
           {blueprint.customFields.length > 0 && (
             <Group title="Campos personalizados">
               <ul className="fields">
-                {blueprint.customFields.map((f) => (
-                  <li key={`${f.entity}-${f.name}`}>
-                    <strong>{f.name}</strong> <em>({f.type})</em> · {f.entity}
+                {blueprint.customFields.map((field) => (
+                  <li key={`${field.entity}-${field.name}`}>
+                    <strong>{field.name}</strong> <em>({field.type})</em> · {field.entity}
                   </li>
                 ))}
               </ul>
@@ -70,8 +121,8 @@ export default function BlueprintPreview({ answers, blueprint, aiUsed, aiAvailab
           {blueprint.automations.length > 0 && (
             <Group title={`Automatizaciones (${blueprint.automations.length})`}>
               <ul className="automations">
-                {blueprint.automations.map((a) => (
-                  <li key={a}>{a}</li>
+                {blueprint.automations.map((item) => (
+                  <li key={item}>{item}</li>
                 ))}
               </ul>
             </Group>
@@ -90,10 +141,17 @@ export default function BlueprintPreview({ answers, blueprint, aiUsed, aiAvailab
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
+function Fact({ label, value, onEdit }: { label: string; value: string; onEdit?: () => void }) {
   return (
     <div className={`fact ${value ? "filled" : ""}`}>
-      <span className="fact-label">{label}</span>
+      <div className="fact-top">
+        <span className="fact-label">{label}</span>
+        {onEdit && (
+          <button type="button" className="linkish" onClick={onEdit}>
+            Cambiar
+          </button>
+        )}
+      </div>
       <span className="fact-value">{value || "—"}</span>
     </div>
   );

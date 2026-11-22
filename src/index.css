@@ -301,8 +301,18 @@ button.primary:disabled,
   font-weight: 600;
   cursor: pointer;
 }
-.done-actions {
+.composer-nav {
+  margin-bottom: 10px;
+}
+.revise-hint {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.done-actions,
+.detail-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
 }
@@ -315,9 +325,30 @@ button.primary:disabled,
 .preview {
   padding: 22px;
 }
+.preview-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
 .preview-header h3 {
   margin: 0;
   font-size: 20px;
+}
+.linkish {
+  background: none;
+  border: none;
+  color: var(--accent-2);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+.fact-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
 }
 .preview-sub {
   color: var(--muted);
@@ -390,12 +421,31 @@ button.primary:disabled,
   flex-wrap: wrap;
   gap: 7px;
 }
+.group-hint {
+  margin: -4px 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .tag {
   background: var(--panel-2);
   border: 1px solid var(--line);
   padding: 6px 11px;
   border-radius: 8px;
   font-size: 13px;
+}
+button.module-toggle {
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+button.module-toggle.on {
+  border-color: var(--accent);
+  background: rgba(109, 94, 252, 0.25);
+}
+button.module-toggle.off {
+  opacity: 0.55;
+  border-style: dashed;
+  background: transparent;
 }
 .pipeline {
   display: flex;
@@ -536,6 +586,13 @@ button.primary:disabled,
   color: var(--muted);
   margin: 4px 0 0;
   font-size: 14px;
+}
+.banner-error {
+  background: rgba(251, 113, 133, 0.12);
+  border: 1px solid rgba(251, 113, 133, 0.4);
+  color: var(--danger);
+  border-radius: 12px;
+  padding: 12px 14px;
 }
 .detail-summary {
   line-height: 1.6;
