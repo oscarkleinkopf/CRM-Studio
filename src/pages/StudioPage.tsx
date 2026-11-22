@@ -77,8 +77,10 @@ export default function StudioPage({ aiPowered }: { aiPowered: boolean }) {
   }, [transcript, phase, flash]);
 
   useEffect(() => {
-    if (revising !== null) composerRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [revising]);
+    if (phase === "ready" || revising !== null) {
+      composerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [phase, revising]);
 
   function commit(next: Partial<ConfiguratorAnswers>) {
     const updated = { ...answers, ...next };
